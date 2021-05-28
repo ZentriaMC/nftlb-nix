@@ -1,0 +1,26 @@
+From 5c00d955f8f6e2ff9d0db93da99ef78b80d363e9 Mon Sep 17 00:00:00 2001
+From: Mark Vainomaa <mikroskeem@mikroskeem.eu>
+Date: Sat, 29 May 2021 02:18:22 +0300
+Subject: [PATCH 4/5] Fix potential null pointer dereference in
+ backend_set_ifinfo
+
+---
+ src/backends.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/backends.c b/src/backends.c
+index e8856a0..f5e3ab6 100644
+--- a/src/backends.c
++++ b/src/backends.c
+@@ -464,7 +464,7 @@ static int backend_set_ifinfo(struct backend *b, int key)
+ 			return -1;
+ 		}
+ 
+-		if (strcmp(f->oface, if_str) != 0) {
++		if (f->oface && strcmp(f->oface, if_str) != 0) {
+ 			if (b->oface)
+ 				free(b->oface);
+ 			obj_set_attribute_string(if_str, &b->oface);
+-- 
+2.31.1
+

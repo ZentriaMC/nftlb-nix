@@ -1,0 +1,157 @@
+From 32dd01aa68126d6af1e04d4298e3f670412dd8a4 Mon Sep 17 00:00:00 2001
+From: Mark Vainomaa <mikroskeem@mikroskeem.eu>
+Date: Sat, 29 May 2021 02:03:33 +0300
+Subject: [PATCH 3/5] Fix memory leaks in net_get_neigh_ether and
+ net_get_local_ifidx_per_remote_host
+
+---
+ src/network.c | 51 +++++++++++++++++++++++++++++++++++++++------------
+ 1 file changed, 39 insertions(+), 12 deletions(-)
+
+diff --git a/src/network.c b/src/network.c
+index 8dc9785..0b1decf 100644
+--- a/src/network.c
++++ b/src/network.c
+@@ -381,6 +381,11 @@ int net_get_neigh_ether(unsigned char **dst_ethaddr, unsigned char *src_ethaddr,
+ 	syslog(LOG_DEBUG, "%s():%d: source mac address %s source ip address %s destination ip address %s iface %d", __FUNCTION__, __LINE__, src_ethaddr, src_ipaddr, dst_ipaddr, outdev);
+ 
+ 	ntl.buf = (char *) malloc(MNL_SOCKET_BUFFER_SIZE);
++	if (!ntl.buf) {
++		syslog(LOG_ERR, "%s():%d: memory allocation error", __FUNCTION__, __LINE__);
++		ret = -1;
++		goto end;
++	}
+ 
+ 	ntl.nlh = mnl_nlmsg_put_header(ntl.buf);
+ 	ntl.nlh->nlmsg_type = RTM_GETNEIGH;
+@@ -398,7 +403,8 @@ int net_get_neigh_ether(unsigned char **dst_ethaddr, unsigned char *src_ethaddr,
+ 	data = (struct ntl_data *)calloc(1, sizeof(struct ntl_data));
+ 	if (!data) {
+ 		syslog(LOG_ERR, "%s():%d: memory allocation error", __FUNCTION__, __LINE__);
+-		return -1;
++		ret = -1;
++		goto cleanup_ntl;
+ 	}
+ 
+ 	ntl.data = (void *)data;
+@@ -406,14 +412,16 @@ int net_get_neigh_ether(unsigned char **dst_ethaddr, unsigned char *src_ethaddr,
+ 	data->dst_ipaddr = (struct in6_addr *)calloc(1, sizeof(struct in6_addr));
+ 	if (!data->dst_ipaddr){
+ 		syslog(LOG_ERR, "%s():%d: memory allocation error", __FUNCTION__, __LINE__);
+-		return -1;
++		ret = -1;
++		goto cleanup_data;
+ 	}
+ 
+ 	data->family = GET_AF_INET(family);
+ 
+ 	if (inet_pton(data->family, dst_ipaddr, data->dst_ipaddr) <= 0) {
+ 		syslog(LOG_ERR, "%s():%d: network translation error for %s", __FUNCTION__, __LINE__, dst_ipaddr);
+-		return -1;
++		ret = -1;
++		goto cleanup_data_dst;
+ 	}
+ 
+ 	data->oifidx = outdev;
+@@ -427,12 +435,13 @@ int net_get_neigh_ether(unsigned char **dst_ethaddr, unsigned char *src_ethaddr,
+ 		data->src_ipaddr = (struct in6_addr *)calloc(1, sizeof(struct in6_addr));
+ 		if (!data->src_ipaddr){
+ 			syslog(LOG_ERR, "%s():%d: memory allocation error", __FUNCTION__, __LINE__);
+-			return ret;
++			goto cleanup_data_dst;
+ 		}
+ 
+ 		if (inet_pton(data->family, src_ipaddr, data->src_ipaddr) <= 0) {
+ 			syslog(LOG_ERR, "%s():%d: network translation error for %s", __FUNCTION__, __LINE__, src_ipaddr);
+-			return ret;
++			free(data->src_ipaddr);
++			goto cleanup_data_dst;
+ 		}
+ 
+ 		memcpy(data->src_ethaddr, src_ethaddr, ETH_HW_ADDR_LEN);
+@@ -441,10 +450,14 @@ int net_get_neigh_ether(unsigned char **dst_ethaddr, unsigned char *src_ethaddr,
+ 	}
+ 
+ 	memcpy(dst_ethaddr, data->dst_ethaddr, ETH_HW_ADDR_LEN);
+-	free(ntl.buf);
++
++cleanup_data_dst:
+ 	free(data->dst_ipaddr);
++cleanup_data:
+ 	free(data);
+-
++cleanup_ntl:
++	free(ntl.buf);
++end:
+ 	return ret;
+ }
+ 
+@@ -459,6 +472,11 @@ int net_get_local_ifidx_per_remote_host(char *dst_ipaddr, int *outdev)
+ 	syslog(LOG_DEBUG, "%s():%d: dst ip address is %s", __FUNCTION__, __LINE__, dst_ipaddr);
+ 
+ 	ntl.buf = (char *) malloc(MNL_SOCKET_BUFFER_SIZE);
++	if (!ntl.buf) {
++		syslog(LOG_ERR, "%s():%d: memory allocation error", __FUNCTION__, __LINE__);
++		ret = -1;
++		goto end;
++	}
+ 
+ 	ntl.nlh = mnl_nlmsg_put_header(ntl.buf);
+ 	ntl.nlh->nlmsg_type = RTM_GETROUTE;
+@@ -479,13 +497,15 @@ int net_get_local_ifidx_per_remote_host(char *dst_ipaddr, int *outdev)
+ 	data = (struct ntl_data *)calloc(1, sizeof(struct ntl_data));
+ 	if (!data) {
+ 		syslog(LOG_ERR, "%s():%d: memory allocation error", __FUNCTION__, __LINE__);
+-		return -1;
++		ret = -1;
++		goto cleanup_ntl;
+ 	}
+ 
+ 	data->dst_ipaddr = (struct in6_addr *)calloc(1, sizeof(struct in6_addr));
+ 	if (!data->dst_ipaddr){
+ 		syslog(LOG_ERR, "%s():%d: memory allocation error", __FUNCTION__, __LINE__);
+-		return -1;
++		ret = -1;
++		goto cleanup_data;
+ 	}
+ 
+ 	ntl.cb = data_getdst_route_cb;
+@@ -494,7 +514,8 @@ int net_get_local_ifidx_per_remote_host(char *dst_ipaddr, int *outdev)
+ 
+ 	if (!inet_pton(ipv, dst_ipaddr, &(addr.sin6_addr.s6_addr))) {
+ 		syslog(LOG_ERR, "%s():%d: network translation error for %s", __FUNCTION__, __LINE__, dst_ipaddr);
+-		return -1;
++		ret = -1;
++		goto cleanup_data_dst;
+ 	}
+ 
+ 	mnl_attr_put(ntl.nlh, RTA_DST, GET_INET_LEN(ipv), &(addr.sin6_addr));
+@@ -503,17 +524,23 @@ int net_get_local_ifidx_per_remote_host(char *dst_ipaddr, int *outdev)
+ 
+ 	if (ret != 0) {
+ 		syslog(LOG_ERR, "%s():%d: not found route to %s", __FUNCTION__, __LINE__, dst_ipaddr);
+-		return -1;
++		ret = -1;
++		goto cleanup_data_dst;
++
+ 	}
+ 
+ 	syslog(LOG_DEBUG, "%s():%d: found route to %s via %d", __FUNCTION__, __LINE__, dst_ipaddr, data->oifidx);
+ 
+ 	*outdev = data->oifidx;
+ 
+-	free(ntl.buf);
++cleanup_data_dst:
+ 	free(data->dst_ipaddr);
++cleanup_data:
+ 	free(data);
++cleanup_ntl:
++	free(ntl.buf);
+ 
++end:
+ 	return ret;
+ }
+ 
+-- 
+2.31.1
+

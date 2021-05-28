@@ -1,0 +1,38 @@
+From 5e066d7509b5aaa1e9bef0cb923b547949be2070 Mon Sep 17 00:00:00 2001
+From: Mark Vainomaa <mikroskeem@mikroskeem.eu>
+Date: Sat, 29 May 2021 02:21:54 +0300
+Subject: [PATCH 5/5] Remove dead code causing memory leak in
+ run_farm_rules_filter_persistence
+
+---
+ src/nft.c | 7 -------
+ 1 file changed, 7 deletions(-)
+
+diff --git a/src/nft.c b/src/nft.c
+index 382dfcd..2d99cbb 100755
+--- a/src/nft.c
++++ b/src/nft.c
+@@ -1422,7 +1422,6 @@ static int run_farm_rules_filter_static_sessions(struct sbuffer *buf, struct far
+ static int run_farm_rules_filter_persistence(struct sbuffer *buf, struct farm *f, int family, char *chain, int action)
+ {
+ 	char map_str[255] = { 0 };
+-	char *client;
+ 	struct session *s;
+ 
+ 	if (f->persistence == VALUE_META_NONE)
+@@ -1435,12 +1434,6 @@ static int run_farm_rules_filter_persistence(struct sbuffer *buf, struct farm *f
+ 		return 0;
+ 
+ 	list_for_each_entry(s, &f->timed_sessions, list) {
+-		client = (char *) malloc(255);
+-		if (!client) {
+-			syslog(LOG_ERR, "%s():%d: unable to allocate parsed client %s for farm %s", __FUNCTION__, __LINE__, s->client, f->name);
+-			continue;
+-		}
+-
+ 		if (s->client) {
+ 			if ((action == ACTION_START || s->action == ACTION_START) && s->bck && s->bck->mark != DEFAULT_MARK)
+ 				concat_exec_cmd(buf, " ; add element %s %s %s { %s : 0x%x }", print_nft_table_family(family, f->mode), NFTLB_TABLE_NAME, map_str, s->client, backend_get_mark(s->bck));
+-- 
+2.31.1
+

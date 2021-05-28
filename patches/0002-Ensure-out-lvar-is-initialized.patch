@@ -1,0 +1,25 @@
+From 455d9bcaf23bff2583cf9b24dfb1f56fde818ada Mon Sep 17 00:00:00 2001
+From: Mark Vainomaa <mikroskeem@mikroskeem.eu>
+Date: Sat, 29 May 2021 01:59:22 +0300
+Subject: [PATCH 2/5] Ensure out lvar is initialized
+
+---
+ src/network.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/network.c b/src/network.c
+index 17ca8ec..8dc9785 100644
+--- a/src/network.c
++++ b/src/network.c
+@@ -649,7 +649,7 @@ static int data_getev_cb(const struct nlmsghdr *nlh, void *data)
+ static void ntlk_cb(struct ev_loop *loop, struct ev_io *watcher, int revents)
+ {
+ 	char buf[MNL_SOCKET_BUFFER_SIZE];
+-	int ret, out;
++	int ret, out = 0;
+ 
+ 	syslog(LOG_DEBUG, "%s():%d: netlink callback executed", __FUNCTION__, __LINE__);
+ 
+-- 
+2.31.1
+
